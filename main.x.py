@@ -47,25 +47,69 @@ class Variable:
     def __init__(self, value, label=''):
         self.value = value
         self.label = label
+    
+    def update(self, value):
+        pass
 
     def __render__(self, user):
         return (
-            pyx.createElement("div", {},  self.label + (':' if self.label != '' else ''),  self.value)
+            pyx.createElement("div", {"style": {
+                    'fontWeight': 'bold',
+                }, "style": {
+                'border': '1px solid #ccc',
+                'borderRadius': '4px',
+                'padding': '4px',
+                    'backgroundColor': '#fff',
+                'fontWeight': 'normal',
+            }},  self.label,  "= ",  pyx.createElement("span", {"style": {
+                    'fontWeight': 'bold',
+                }}, self.value))
         )
 
-class Toolbar:
-    def __init__(self):
-        pass
+class Operator(Variable):
+    def __init__(self, label, ftn):
+        self.label = label
+        self.ftn = ftn
+        self.value = None
+    
+    def update(self, value):
+        if value is not None:
+            self.value = round(self.ftn(value), 2)
+        else:
+            self.value = None
     
     def __render__(self, user):
-        return (
-            pyx.createElement("div", {},  "Toolbar\n            ")
-        )
+        if self.value is None:
+            return (
+                pyx.createElement("div", {"style": {
+                    'border': '1px solid #ccc',
+                    'borderRadius': '4px',
+                    'padding': '4px',
+                    'color': '#aaa',
+                    'backgroundColor': '#fff',
+                    'fontWeight': 'normal',
+                }},  self.label)
+            )
+        else:
+            return (
+                pyx.createElement("div", {"style": {
+                        'fontWeight': 'bold',
+                    }, "style": {
+                    'border': '1px solid #ccc',
+                    'borderRadius': '4px',
+                    'padding': '4px',
+                    'backgroundColor': '#fff',
+                    'fontWeight': 'normal',
+                }},  self.label,  "= ",  pyx.createElement("span", {"style": {
+                        'fontWeight': 'bold',
+                    }}, self.value))
+            )
+
 
 class DevelopPanel:
     def __init__(self, user):
         self.user = user
-        self.height = 160
+        self.height = 320
         self.floaters = []
         self.panelOffsetX = 0
         self.panelOffsetY = 0
@@ -76,10 +120,52 @@ class DevelopPanel:
         self.directionVariable = Variable(0, 'Direction')
         self.distanceVariable = Variable(0, 'Speed')
 
-        self.addFloater(self.directionVariable, 50, 50)
-        self.addFloater(self.distanceVariable, 50, 80)
+        def moveCharacter(x, y, delta=False):
+            if delta:
+                self.user['character'].x += x
+                self.user['character'].y -= y
+            else:
+                if x is not None:
+                    self.user['character'].x = x
+                if y is not None:
+                    self.user['character'].y = y
+            self.user.forceUpdate(self.user['character'])
+            if x is None: return y
+            if y is None: return x
+            return x + y
 
-        self.toolbar = Toolbar()
+        self.addFloater(self.directionVariable, 10, 10)
+        self.addFloater(self.directionVariable, 10, 40)
+
+        self.addFloater(Operator('→ add to character X', lambda x: moveCharacter(x, 0, True)), 150, 10)
+        self.addFloater(Operator('→ add to character Y', lambda x: moveCharacter(0, x, True)), 150, 40)
+        # self.addFloater(Operator('→ set character X', lambda x: moveCharacter(x, None)), 150, 70)
+        # self.addFloater(Operator('→ set character Y', lambda x: moveCharacter(None, x)), 150, 100)
+
+        self.addFloater(Operator(' * π ÷ 180', lambda x: x * math.pi / 180), 10, 130)
+        self.addFloater(Operator(' * π ÷ 180', lambda x: x * math.pi / 180), 10, 160)
+        # self.addFloater(Operator(' * 0.1', lambda x: x * 0.1), 10, 190)
+        # self.addFloater(Operator(' * 5', lambda x: x * 5), 10, 220)
+        # self.addFloater(Operator(' * 10', lambda x: x * 10), 10, 250)
+        # self.addFloater(Operator(' * 100', lambda x: x * 0.001), 10, 280)
+        self.addFloater(Operator(' * speed', lambda x: x * self.user['distance']/10), 100, 130)
+        self.addFloater(Operator(' * speed', lambda x: x * self.user['distance']/10), 100, 160)
+
+        self.addFloater(Operator('sin(𝑥)', lambda x: math.sin(x)), 100, 190)
+        self.addFloater(Operator('cos(𝑥)', lambda x: math.cos(x)), 100, 220)
+
+
+    def onTick(self, deltaTime):
+        try:
+            for target in self.floaters:
+                target.target.update(None)
+                for floater in self.floaters:
+                    if floater.target == target: continue
+                    if target.y > floater.y + 20 and target.y < floater.y + 40:
+                        if target.x > floater.x - 10 and target.x < floater.x + 10:
+                            target.target.update(floater.target.value)
+        except Exception as e:
+            print(e)
     
     def addFloater(self, target, x, y):
         self.floaters.append(Floater(self, target, x, y))
@@ -131,7 +217,7 @@ class DevelopPanel:
                 'left': '0px',
                 'backgroundColor': '#fff',
                 'overflow': 'hidden',
-            }, "onTouchMove": self.onTouchMove, "onTouchEnd": self.onTouchEnd, "onTouchStart": self.onTouchStart},  self.floaters,  self.toolbar)
+            }, "onTouchMove": self.onTouchMove, "onTouchEnd": self.onTouchEnd, "onTouchStart": self.onTouchStart},  self.floaters)
         )
 
 import math
@@ -220,13 +306,29 @@ class Character:
     def __init__(self, user):
         self.user = user
         self.x = 32
-        self.y = 240
+        self.y = 420
         self.speed = 0
         self.color = '#c99'
     
     def __render__(self, user):
         return (
             pyx.createElement("div", {"style": {
+                    'width': '4px',
+                    'height': '4px',
+                    'backgroundColor': '#000',
+                    'position': 'absolute',
+                    'right': '6px',
+                    'top': '10px',
+                    'borderRadius': '50%',
+                }, "style": {
+                    'width': '4px',
+                    'height': '4px',
+                    'backgroundColor': '#000',
+                    'position': 'absolute',
+                    'right': '6px',
+                    'top': '18px',
+                    'borderRadius': '50%',
+                }, "style": {
                 'width': '32px',
                 'height': '32px',
                 'backgroundColor': self.color,
@@ -235,7 +337,25 @@ class Character:
                 'left': f"{self.x}px",
                 'borderRadius': '40%',
                 'transform': f'rotate({self.user["direction"]}deg)',
-            }}, )
+            }}, 
+                pyx.createElement("div", {"style": {
+                    'width': '4px',
+                    'height': '4px',
+                    'backgroundColor': '#000',
+                    'position': 'absolute',
+                    'right': '6px',
+                    'top': '10px',
+                    'borderRadius': '50%',
+                }}, ), 
+                pyx.createElement("div", {"style": {
+                    'width': '4px',
+                    'height': '4px',
+                    'backgroundColor': '#000',
+                    'position': 'absolute',
+                    'right': '6px',
+                    'top': '18px',
+                    'borderRadius': '50%',
+                }}, ))
         )
 
 class GamePanel:
@@ -271,7 +391,7 @@ class MainApp(pyx.App):
         self.tickRunning = True
         lastTime = time.time()
         while True:
-            await tornado.gen.sleep(0.01)
+            await tornado.gen.sleep(0.05)
             currentTime = time.time()
             deltaTime = currentTime - lastTime
             lastTime = currentTime
@@ -279,10 +399,11 @@ class MainApp(pyx.App):
     
     async def onTick(self, deltaTime):
         for user in self.users.values():
-            if user['distance'] > 0:
-                user['character'].x += math.cos(user['direction'] * math.pi / 180) * user['distance'] * deltaTime * 2
-                user['character'].y += math.sin(user['direction'] * math.pi / 180) * user['distance'] * deltaTime * 2
-                user.forceUpdate(user['character'])
+            # if user['distance'] > 0:
+            #     user['character'].x += math.cos(user['direction'] * math.pi / 180) * user['distance'] * deltaTime * 2
+            #     user['character'].y += math.sin(user['direction'] * math.pi / 180) * user['distance'] * deltaTime * 2
+            #     user.forceUpdate(user['character'])
+            user['developPanel'].onTick(deltaTime)
     
     def onConnect(self, user):
         user['developPanel'] = DevelopPanel(user)
