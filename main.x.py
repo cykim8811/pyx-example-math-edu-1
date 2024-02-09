@@ -26,21 +26,21 @@ class Floater:
     
     async def onTouchEnd(self, e):
         self.isDragging = False
+
+
+    async def onTouchStart(self, e):
+        self.isDragging = True
+        self.panel.onFloaterTouchStart(self, e)
+        self.dragOffsetX = None
+        self.dragOffsetY = None
     
     def __render__(self, user):
-        async def onTouchStart(e):
-            self.isDragging = True
-            self.panel.onFloaterTouchStart(self, e)
-            self.dragOffsetX = None
-            self.dragOffsetY = None
-        onTouchStart.stopPropagation = True
-        
         return (
             pyx.createElement("div", {"style": {
                 'position': 'absolute',
                 'top': f'{self.y - self.panel.panelOffsetY}px',
                 'left': f'{self.x - self.panel.panelOffsetX}px',
-                }, "onTouchStart": onTouchStart},  self.target)
+                }, "onTouchStart": self.onTouchStart},  self.target)
         )
 
 class Variable:
@@ -63,7 +63,7 @@ class Variable:
                 'fontWeight': 'normal',
             }},  self.label,  "= ",  pyx.createElement("span", {"style": {
                     'fontWeight': 'bold',
-                }}, self.value))
+                }}, str(round(self.value, 2))))
         )
 
 class Operator(Variable):
@@ -74,7 +74,7 @@ class Operator(Variable):
     
     def update(self, value):
         if value is not None:
-            self.value = round(self.ftn(value), 2)
+            self.value = self.ftn(value)
         else:
             self.value = None
     
@@ -102,7 +102,7 @@ class Operator(Variable):
                     'fontWeight': 'normal',
                 }},  self.label,  "= ",  pyx.createElement("span", {"style": {
                         'fontWeight': 'bold',
-                    }}, self.value))
+                    }}, str(round(self.value, 2))))
             )
 
 
@@ -128,7 +128,7 @@ class DevelopPanel:
                 if x is not None:
                     self.user['character'].x = x
                 if y is not None:
-                    self.user['character'].y = y
+                    self.user['character'].y = -y + 520
             self.user.forceUpdate(self.user['character'])
             if x is None: return y
             if y is None: return x
@@ -139,31 +139,29 @@ class DevelopPanel:
 
         self.addFloater(Operator('→ add to character X', lambda x: moveCharacter(x, 0, True)), 150, 10)
         self.addFloater(Operator('→ add to character Y', lambda x: moveCharacter(0, x, True)), 150, 40)
-        # self.addFloater(Operator('→ set character X', lambda x: moveCharacter(x, None)), 150, 70)
-        # self.addFloater(Operator('→ set character Y', lambda x: moveCharacter(None, x)), 150, 100)
+        self.addFloater(Operator('→ set character X', lambda x: moveCharacter(x, None)), 150, 70)
+        self.addFloater(Operator('→ set character Y', lambda x: moveCharacter(None, x)), 150, 100)
 
         self.addFloater(Operator(' * π ÷ 180', lambda x: x * math.pi / 180), 10, 130)
         self.addFloater(Operator(' * π ÷ 180', lambda x: x * math.pi / 180), 10, 160)
-        # self.addFloater(Operator(' * 0.1', lambda x: x * 0.1), 10, 190)
-        # self.addFloater(Operator(' * 5', lambda x: x * 5), 10, 220)
-        # self.addFloater(Operator(' * 10', lambda x: x * 10), 10, 250)
-        # self.addFloater(Operator(' * 100', lambda x: x * 0.001), 10, 280)
         self.addFloater(Operator(' * speed', lambda x: x * self.user['distance']/10), 100, 130)
         self.addFloater(Operator(' * speed', lambda x: x * self.user['distance']/10), 100, 160)
 
         self.addFloater(Operator('sin(𝑥)', lambda x: math.sin(x)), 100, 190)
         self.addFloater(Operator('cos(𝑥)', lambda x: math.cos(x)), 100, 220)
+        self.addFloater(Operator(' * 50', lambda x: x * 100), 100, 250)
 
 
     def onTick(self, deltaTime):
         try:
             for target in self.floaters:
-                target.target.update(None)
+                updateTarget = None
                 for floater in self.floaters:
                     if floater.target == target: continue
                     if target.y > floater.y + 20 and target.y < floater.y + 40:
                         if target.x > floater.x - 10 and target.x < floater.x + 10:
-                            target.target.update(floater.target.value)
+                            updateTarget = floater.target.value
+                target.target.update(updateTarget)
         except Exception as e:
             print(e)
     
@@ -178,9 +176,9 @@ class DevelopPanel:
         self.floaters = self.floaters
         
     async def onTouchMove(self, e):
+        mx = await e.touches[0].clientX
+        my = await e.touches[0].clientY
         if self.isDragging:
-            mx = await e.touches[0].clientX
-            my = await e.touches[0].clientY
             if self.dragOffsetX is None:
                 self.dragOffsetX = mx + self.panelOffsetX
                 self.dragOffsetY = my + self.panelOffsetY
@@ -233,9 +231,7 @@ class Joystick:
         self.originX = 0
         self.originY = 0
     
-    async def onTouchMove(self, e):
-        mx = await e.touches[0].clientX
-        my = await e.touches[0].clientY
+    def onTouchMove(self, mx, my):
         if self.isDragging:
             if self.originX is None:
                 self.originX = mx
@@ -252,7 +248,13 @@ class Joystick:
             self.stickY = f"{round(my)}px - {self.y}"
 
             self.user['distance'] = (dx ** 2 + dy ** 2) ** 0.5
+
+            if 'direction' not in self.user.data: self.user['direction'] = 0
+            newDirection = math.atan2(dy, dx) * 180 / math.pi
+            deltaDirection = newDirection - self.user['direction']
+            deltaDirection = (deltaDirection + 180) % 360 - 180
             self.user['direction'] = math.atan2(dy, dx) * 180 / math.pi
+
 
     
     async def onTouchEnd(self, e):
@@ -261,12 +263,13 @@ class Joystick:
         self.stickY = "0px"
         self.user['distance'] = 0
         self.user.forceUpdate(self)
+
+    async def onTouchStart(self, e):
+        self.isDragging = True
+        self.originY = None
+        self.originX = None
         
     def __render__(self, user):
-        async def onTouchStart(e):
-            self.isDragging = True
-            self.originY = None
-            self.originX = None
         
         return (
             pyx.createElement("div", {"style": {
@@ -279,7 +282,7 @@ class Joystick:
                     'left': f"calc({self.stickX} + 50%)",
                     'transform': 'translate(-50%, -50%)',
                     'userSelect': 'none',
-                }, "onTouchStart": onTouchStart, "onTouchEnd": self.onTouchEnd, "style": {
+                }, "onTouchStart": self.onTouchStart, "onTouchEnd": self.onTouchEnd, "style": {
                 'width': '130px',
                 'height': '130px',
                 'borderRadius': '50%',
@@ -299,7 +302,7 @@ class Joystick:
                     'left': f"calc({self.stickX} + 50%)",
                     'transform': 'translate(-50%, -50%)',
                     'userSelect': 'none',
-                }, "onTouchStart": onTouchStart, "onTouchEnd": self.onTouchEnd}, ))
+                }, "onTouchStart": self.onTouchStart, "onTouchEnd": self.onTouchEnd}, ))
         )
 
 class Character:
@@ -358,9 +361,16 @@ class Character:
                 }}, ))
         )
 
+from random import random
+
 class GamePanel:
     async def onTouchMove(self, e):
-        await e.user['joystick'].onTouchMove(e)
+        if 'prevMousePos' not in e.user.data:
+            e.user['prevMousePos'] = (-10000, -10000)
+        mx, my = await e.touches[0].clientX, await e.touches[0].clientY
+        if (mx - e.user['prevMousePos'][0]) ** 2 + (my - e.user['prevMousePos'][1]) ** 2 > 64:
+            e.user['joystick'].onTouchMove(mx, my)
+            e.user['prevMousePos'] = (mx, my)
     
     async def onTouchEnd(self, e):
         await e.user['joystick'].onTouchEnd(e)
@@ -369,13 +379,24 @@ class GamePanel:
         if 'joystick' not in user.data:
             user['joystick'] = Joystick(user)
         return (
-            pyx.createElement("div", {"style": {
-                'width': '100vw',
-                'height': '92vh',
-                'backgroundColor': '#f9f9fb',
-                'position': 'relative',
-                'overflow': 'hidden',
-            }, "onTouchMove": self.onTouchMove, "onTouchEnd": self.onTouchEnd},  "GamePanel\n                ",  user['joystick'],  [user['character'] for user in user.app.users.values()])
+            pyx.createElement("span", {"style": {
+                    'width': '100vw',
+                    'height': '92vh',
+                    'backgroundColor': '#f9f9fb',
+                    'position': 'relative',
+                    'overflow': 'hidden',
+                }, "onTouchMove": self.onTouchMove, "onTouchEnd": self.onTouchEnd, "style": {
+                'position': 'fixed',
+                'top': '0px',
+                'left': '0px',
+            }}, 
+                pyx.createElement("div", {"style": {
+                    'width': '100vw',
+                    'height': '92vh',
+                    'backgroundColor': '#f9f9fb',
+                    'position': 'relative',
+                    'overflow': 'hidden',
+                }, "onTouchMove": self.onTouchMove, "onTouchEnd": self.onTouchEnd},  "GamePanel\n                    ",  user['joystick'],  [user['character'] for user in user.app.users.values()]))
         )
 
 import tornado.gen
@@ -427,5 +448,5 @@ class MainApp(pyx.App):
         )
 
 app = MainApp()
-app.run('0.0.0.0', 7002)
+app.run('0.0.0.0', 7003)
 
